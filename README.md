@@ -1,0 +1,2 @@
+# redbook_ceph_usecase
+redbook_ceph_usecase modernizing the datalake
