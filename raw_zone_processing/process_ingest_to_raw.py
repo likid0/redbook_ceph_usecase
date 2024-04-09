@@ -12,10 +12,7 @@ def has_personal_info(csv_content):
     # Regular expressions to match common personal information patterns
     patterns = [
         r'\b\d{3}-\d{2}-\d{4}\b',  # Social Security Number (SSN)
-        r'\b\d{3}\s\d{2}\s\d{4}\b',  # Another format of Social Security Number (SSN)
-        r'\b\d{9}\b',  # Another format of Social Security Number (SSN)
         r'\b\d{4}-\d{4}-\d{4}-\d{4}\b',  # Credit Card Number
-        r'\b\d{4}\s\d{4}\s\d{4}\s\d{4}\b',  # Another format of Credit Card Number
         r'\b\d{16}\b',  # Another format of Credit Card Number
         r'\b\d{3}\b',  # CVV
         r'\b\d{2}/\d{2}/\d{4}\b',  # Date of birth
