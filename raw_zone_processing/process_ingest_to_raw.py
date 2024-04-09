@@ -1,0 +1,260 @@
+import csv
+import re
+import os
+import logging
+import requests
+import boto3
+
+# Initialize logging
+logging.basicConfig(level=logging.INFO)
+
+def has_personal_info(csv_content):
+    # Regular expressions to match common personal information patterns
+    patterns = [
+        r'\b\d{3}-\d{2}-\d{4}\b',  # Social Security Number (SSN)
+        r'\b\d{3}\s\d{2}\s\d{4}\b',  # Another format of Social Security Number (SSN)
+        r'\b\d{9}\b',  # Another format of Social Security Number (SSN)
+        r'\b\d{4}-\d{4}-\d{4}-\d{4}\b',  # Credit Card Number
+        r'\b\d{4}\s\d{4}\s\d{4}\s\d{4}\b',  # Another format of Credit Card Number
+        r'\b\d{16}\b',  # Another format of Credit Card Number
+        r'\b\d{3}\b',  # CVV
+        r'\b\d{2}/\d{2}/\d{4}\b',  # Date of birth
+        r'\b\d{1,2}/\d{1,2}/\d{2}\b',  # Another format of date of birth
+        r'\b\d{1,2}-\d{1,2}-\d{2}\b',  # Another format of date of birth
+        r'\b\d{1,2}\s[a-zA-Z]+\s\d{4}\b',  # Another format of date of birth
+        r'\b\d{1,2}/\d{1,2}/\d{4}\b',  # Another format of date of birth
+        r'\b\d{2}-\d{2}-\d{4}\b'  # Another format of date of birth
+    ]
+
+    for pattern in patterns:
+        if re.search(pattern, csv_content):
+            return True
+    return False
+
+def check_environment():
+    missing_params = []
+
+    # Check for required environment variables
+    required_env_vars = [
+        'SOURCE_ROLE_ARN',
+        'DESTINATION_ROLE_ARN',
+        'OIDC_PROVIDER_URL',
+        'OIDC_CLIENT_SECRET',
+        'OIDC_CLIENT_ID',
+        'OIDC_USERNAME',
+        'OIDC_PASSWORD',
+        'S3_ENDPOINT_URL',
+        'STS_ENDPOINT_URL'
+    ]
+
+    for var in required_env_vars:
+        if var not in os.environ:
+            missing_params.append(var)
+
+    if missing_params:
+        print("Missing environment parameters:")
+        for param in missing_params:
+            print(f"- {param}")
+        print("Please set these environment variables and try again.")
+        return False
+    else:
+        return True
+
+def read_csv_from_s3(bucket_name, object_key, s3_endpoint_url, sts_client):
+    try:
+        # Get temporary credentials using AssumeRoleWithWebIdentity
+        role_arn = os.getenv('SOURCE_ROLE_ARN')
+        role_session_name = 'source_session'
+        provider_url = os.getenv('OIDC_PROVIDER_URL')
+        client_id = os.getenv('OIDC_CLIENT_ID')
+        client_secret = os.getenv('OIDC_CLIENT_SECRET')
+        jwt_token = get_jwt_token(provider_url, client_id, client_secret)
+        
+        assumed_role = sts_client.assume_role_with_web_identity(
+            RoleArn=role_arn,
+            RoleSessionName=role_session_name,
+            WebIdentityToken=jwt_token
+        )
+
+        # Initialize S3 client with temporary credentials
+        s3 = boto3.client(
+            's3',
+            aws_access_key_id=assumed_role['Credentials']['AccessKeyId'],
+            aws_secret_access_key=assumed_role['Credentials']['SecretAccessKey'],
+            aws_session_token=assumed_role['Credentials']['SessionToken'],
+            endpoint_url=s3_endpoint_url
+        )
+
+        # Get object from S3
+        response = s3.get_object(Bucket=bucket_name, Key=object_key)
+        # Read CSV content
+        csv_content = response['Body'].read().decode('utf-8')
+        return csv_content
+    except Exception as e:
+        logging.error(f"Error reading CSV from S3: {e}")
+        return None
+
+def process_csv_files_in_bucket(bucket_name, s3_endpoint_url, sts_client, personal_info_bucket, no_personal_info_bucket):
+    try:
+        # Get temporary credentials using AssumeRoleWithWebIdentity
+        role_arn = os.getenv('SOURCE_ROLE_ARN')
+        role_session_name = 'source_session'
+        provider_url = os.getenv('OIDC_PROVIDER_URL')
+        client_id = os.getenv('OIDC_CLIENT_ID')
+        client_secret = os.getenv('OIDC_CLIENT_SECRET')
+        jwt_token = get_jwt_token(provider_url, client_id, client_secret)
+        
+        assumed_role = sts_client.assume_role_with_web_identity(
+            RoleArn=role_arn,
+            RoleSessionName=role_session_name,
+            WebIdentityToken=jwt_token
+        )
+
+        # Initialize S3 client with temporary credentials
+        s3 = boto3.client(
+            's3',
+            aws_access_key_id=assumed_role['Credentials']['AccessKeyId'],
+            aws_secret_access_key=assumed_role['Credentials']['SecretAccessKey'],
+            aws_session_token=assumed_role['Credentials']['SessionToken'],
+            endpoint_url=s3_endpoint_url
+        )
+
+        # List objects in the bucket
+        response = s3.list_objects_v2(Bucket=bucket_name)
+        
+        # Process each object
+        for obj in response.get('Contents', []):
+            object_key = obj['Key']
+            # Skip objects that are already tagged as processed
+            if is_processed_object(s3, bucket_name, object_key):
+                logging.info(f"Skipping processed object: {object_key}")
+                continue
+            # Read CSV content from S3
+            csv_content = read_csv_from_s3(bucket_name, object_key, s3_endpoint_url, sts_client)
+            if csv_content:
+                shop_id, _ = object_key.split('_', 1)  # Extract shop ID from filename until first underscore
+                csv_content = insert_shop_id_to_csv(csv_content, shop_id)
+                # Determine destination bucket based on personal information
+                destination_bucket = personal_info_bucket if has_personal_info(csv_content) else no_personal_info_bucket
+                # Upload modified CSV to the appropriate destination bucket
+                upload_csv_to_s3(destination_bucket, object_key, csv_content, s3_endpoint_url, sts_client)
+                # Tag the object as processed
+                tag_object_as_processed(s3, bucket_name, object_key)
+    except Exception as e:
+        logging.error(f"Error processing CSV files in bucket: {e}")
+
+def insert_shop_id_to_csv(csv_content, shop_id):
+    # Split CSV content into rows
+    rows = csv_content.split('\n')
+    # Insert shop ID as the first column
+    for i, row in enumerate(rows):
+        if row.strip():  # Skip empty rows
+            rows[i] = f"{shop_id},{row}"
+    # Join rows back into CSV content
+    modified_csv_content = '\n'.join(rows)
+    modified_csv_content = modified_csv_content.replace('\r', '')
+    return modified_csv_content
+
+def upload_csv_to_s3(bucket_name, object_key, csv_content, s3_endpoint_url, sts_client):
+    try:
+        # Get temporary credentials using AssumeRoleWithWebIdentity
+        role_arn = os.getenv('DESTINATION_ROLE_ARN')
+        role_session_name = 'destination_session'
+        provider_url = os.getenv('OIDC_PROVIDER_URL')
+        client_id = os.getenv('OIDC_CLIENT_ID')
+        client_secret = os.getenv('OIDC_CLIENT_SECRET')
+        jwt_token = get_jwt_token(provider_url, client_id, client_secret)
+        assumed_role = sts_client.assume_role_with_web_identity(
+            RoleArn=role_arn,
+            RoleSessionName=role_session_name,
+            WebIdentityToken=jwt_token
+        )
+
+        # Initialize S3 client with temporary credentials
+        s3 = boto3.client(
+            's3',
+            aws_access_key_id=assumed_role['Credentials']['AccessKeyId'],
+            aws_secret_access_key=assumed_role['Credentials']['SecretAccessKey'],
+            aws_session_token=assumed_role['Credentials']['SessionToken'],
+            endpoint_url=s3_endpoint_url
+        )
+
+        # Upload modified CSV to S3 bucket
+        response = s3.put_object(Bucket=bucket_name, Key=object_key, Body=csv_content.encode('utf-8'))
+        logging.info(f"Modified CSV uploaded to S3: {object_key}")
+    except Exception as e:
+        logging.error(f"Error uploading CSV to S3: {e}")
+
+def tag_object_as_processed(s3, bucket_name, object_key):
+    try:
+        # Tag the object as processed
+        s3.put_object_tagging(
+            Bucket=bucket_name,
+            Key=object_key,
+            Tagging={'TagSet': [{'Key': 'processed', 'Value': 'true'}]}
+        )
+        logging.info(f"Object tagged as processed: {object_key}")
+    except Exception as e:
+        logging.error(f"Error tagging object as processed: {e}")
+
+def is_processed_object(s3, bucket_name, object_key):
+    try:
+        # Check if the object is tagged as processed
+        response = s3.get_object_tagging(Bucket=bucket_name, Key=object_key)
+        tags = response['TagSet']
+        for tag in tags:
+            if tag['Key'] == 'processed' and tag['Value'] == 'true':
+                return True
+        return False
+    except s3.exceptions.NoSuchKey:
+        return False
+    except Exception as e:
+        logging.error(f"Error checking if object is processed: {e}")
+        return False
+
+def get_jwt_token(provider_url, client_id, client_secret):
+    # Send authentication request to OIDC provider to obtain JWT token
+    username = os.getenv('OIDC_USERNAME')
+    password = os.getenv('OIDC_PASSWORD')
+    token_endpoint = f"{provider_url}/token"
+    
+    payload = {
+        'grant_type': 'password',
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'username': username,
+        'password': password
+    }
+    
+    try:
+        response = requests.post(token_endpoint, data=payload)
+        response.raise_for_status()
+        token_data = response.json()
+        return token_data['access_token']
+    except Exception as e:
+        logging.error(f"Error obtaining JWT token: {e}")
+        return None
+
+if __name__ == "__main__":
+    # Check environment parameters
+    if not check_environment():
+        exit(1)
+
+    # Set your source bucket
+    source_bucket_name = 'ingest'
+
+    # Set your destination buckets for personal info and non-personal info
+    personal_info_bucket = 'confidential'
+    no_personal_info_bucket = 'anonymized'
+    
+    # Get S3 endpoint URL from environment variable
+    s3_endpoint_url = os.getenv('S3_ENDPOINT_URL')
+
+    # Get custom STS endpoint
+    sts_endpoint_url = os.getenv('STS_ENDPOINT_URL')
+
+    # Initialize STS client with custom endpoint
+    sts_client = boto3.client('sts', endpoint_url=sts_endpoint_url)
+
+    # Process CSV files in the bucket
+    process_csv_files_in_bucket(source_bucket_name, s3_endpoint_url, sts_client, personal_info_bucket, no_personal_info_bucket)
