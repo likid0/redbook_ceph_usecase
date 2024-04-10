@@ -6,4 +6,4 @@ COPY requirements.txt process_ingest_to_raw.py  ./
 
 RUN pip install -r requirements.txt
 
-CMD ["python3", "-u", "/app/process_ingest_to_raw.py"]
+CMD ["python3", "-u", "/usr/src/app/process_ingest_to_raw.py"]
