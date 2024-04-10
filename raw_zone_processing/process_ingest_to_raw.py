@@ -4,8 +4,11 @@ import os
 import logging
 import requests
 import boto3
+import time
+from flask import Flask, request, jsonify
 
 # Initialize logging
+app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
 def has_personal_info(csv_content):
@@ -232,10 +235,26 @@ def get_jwt_token(provider_url, client_id, client_secret):
         logging.error(f"Error obtaining JWT token: {e}")
         return None
 
-if __name__ == "__main__":
-    # Check environment parameters
-    if not check_environment():
-        exit(1)
+# Example endpoint to trigger CSV processing
+@app.route('/', methods=['GET'])
+def trigger_process():
+    # Check for required environment parameters
+    required_env_vars = [
+        'SOURCE_ROLE_ARN',
+        'DESTINATION_ROLE_ARN',
+        'OIDC_PROVIDER_URL',
+        'OIDC_CLIENT_SECRET',
+        'OIDC_CLIENT_ID',
+        'OIDC_USERNAME',
+        'OIDC_PASSWORD',
+        'S3_ENDPOINT_URL',
+        'STS_ENDPOINT_URL'
+    ]
+
+    missing_params = [var for var in required_env_vars if os.getenv(var) is None]
+
+    if missing_params:
+        return jsonify({'error': f'Missing environment parameters: {", ".join(missing_params)}'}), 500
 
     # Set your source bucket
     source_bucket_name = 'ingest'
@@ -255,3 +274,18 @@ if __name__ == "__main__":
 
     # Process CSV files in the bucket
     process_csv_files_in_bucket(source_bucket_name, s3_endpoint_url, sts_client, personal_info_bucket, no_personal_info_bucket)
+
+    return jsonify({'message': 'CSV processing triggered'}), 200
+
+# Example endpoint for health check
+@app.route('/healthz', methods=['GET'])
+def health_check():
+    return 'Health OK', 200
+
+if __name__ == "__main__":
+    # Check environment parameters
+    if not check_environment():
+        exit(1)
+
+    # Run Flask app
+    app.run(host='0.0.0.0', port=8080)
