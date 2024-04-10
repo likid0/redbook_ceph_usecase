@@ -47,7 +47,6 @@ def generate_fake_data(shop_id, date, num_entries, include_personal_data):
     # Create Faker instance
     fake = Faker()
 
-    # Define fake data
     product_categories = ["Clothing", "Accessories", "Footwear", "Electronics", "Jewelry"]
     product_names_by_category = {
         "Clothing": [
@@ -67,7 +66,6 @@ def generate_fake_data(shop_id, date, num_entries, include_personal_data):
         ]
     }
 
-    # Generate fake data
     fake_data = []
     for _ in range(num_entries):
         invoice_no = random.randint(10000, 99999)
@@ -90,7 +88,6 @@ def generate_fake_data(shop_id, date, num_entries, include_personal_data):
         else:
             fake_data.append([invoice_no, stock_code, product_name, quantity, invoice_date, price, customer_id, country, payment_method, product_category])
 
-    # Write to CSV file
     with open(file_name, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
         if include_personal_data:
@@ -101,7 +98,6 @@ def generate_fake_data(shop_id, date, num_entries, include_personal_data):
 
     logging.info(f"Fake data generated and saved to '{file_name}'")
 
-    # Upload to S3
     upload_to_s3(file_name)
 
 def get_country_from_shop_id(shop_id):
@@ -131,11 +127,9 @@ def upload_to_s3(file_name):
     client_id = os.getenv('OIDC_CLIENT_ID')
     client_secret = os.getenv('OIDC_CLIENT_SECRET')
 
-    # Initialize STS client with custom endpoint
     sts_client = boto3.client('sts', endpoint_url=sts_endpoint_url)
 
     try:
-        # Get JWT token
         provider_url = os.getenv('OIDC_PROVIDER_URL')
         client_id = os.getenv('OIDC_CLIENT_ID')
         client_secret = os.getenv('OIDC_CLIENT_SECRET')
@@ -144,7 +138,6 @@ def upload_to_s3(file_name):
             logging.error("Failed to obtain JWT token. Aborting upload to S3.")
             return
 
-        # Assume role
         role_session_name = 'source_session'
         assumed_role = sts_client.assume_role_with_web_identity(
             RoleArn=role_arn,
