@@ -33,7 +33,7 @@ def check_env_variables():
         return False
     return True
 
-def generate_fake_data(shop_id, date, num_entries):
+def generate_fake_data(shop_id, date, num_entries, include_personal_data):
     # Validate date format
     try:
         parsed_date = datetime.datetime.strptime(date, '%d-%m-%Y')
@@ -85,12 +85,18 @@ def generate_fake_data(shop_id, date, num_entries):
         email = fake.email()
         payment_method = random.choice(["Credit Card", "Cash"])
         
-        fake_data.append([invoice_no, stock_code, product_name, quantity, invoice_date, price, customer_id, country, ssn, email, payment_method, product_category])
+        if include_personal_data:
+            fake_data.append([invoice_no, stock_code, product_name, quantity, invoice_date, price, customer_id, country, ssn, email, payment_method, product_category])
+        else:
+            fake_data.append([invoice_no, stock_code, product_name, quantity, invoice_date, price, customer_id, country, payment_method, product_category])
 
     # Write to CSV file
     with open(file_name, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(['InvoiceNo', 'StockCode', 'Description', 'Quantity', 'InvoiceDate', 'Price', 'CustomerID', 'Country', 'SSN', 'Email', 'PaymentMethod', 'ProductCategory'])
+        if include_personal_data:
+            writer.writerow(['InvoiceNo', 'StockCode', 'Description', 'Quantity', 'InvoiceDate', 'Price', 'CustomerID', 'Country', 'SSN', 'Email', 'PaymentMethod', 'ProductCategory'])
+        else:
+            writer.writerow(['InvoiceNo', 'StockCode', 'Description', 'Quantity', 'InvoiceDate', 'Price', 'CustomerID', 'Country', 'PaymentMethod', 'ProductCategory'])
         writer.writerows(fake_data)
 
     logging.info(f"Fake data generated and saved to '{file_name}'")
@@ -194,8 +200,9 @@ if __name__ == "__main__":
     parser.add_argument("shop_id", type=str, help="Shop ID")
     parser.add_argument("date", type=str, help="Date in DD-MM-YYYY format")
     parser.add_argument("num_entries", type=int, help="Number of entries to generate")
+    parser.add_argument("--include-personal-data", action="store_true", help="Include personal data columns")
     args = parser.parse_args()
 
     # Generate fake data
-    generate_fake_data(args.shop_id, args.date, args.num_entries)
+    generate_fake_data(args.shop_id, args.date, args.num_entries, args.include_personal_data)
 
