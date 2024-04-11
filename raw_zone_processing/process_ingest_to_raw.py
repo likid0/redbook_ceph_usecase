@@ -6,6 +6,7 @@ import requests
 import boto3
 import time
 from flask import Flask, request, jsonify
+from cloudevents.http import from_http
 
 # Initialize logging
 app = Flask(__name__)
@@ -18,12 +19,6 @@ def has_personal_info(csv_content):
         r'\b\d{4}-\d{4}-\d{4}-\d{4}\b',  # Credit Card Number
         r'\b\d{16}\b',  # Another format of Credit Card Number
         r'\b\d{3}\b',  # CVV
-        r'\b\d{2}/\d{2}/\d{4}\b',  # Date of birth
-        r'\b\d{1,2}/\d{1,2}/\d{2}\b',  # Another format of date of birth
-        r'\b\d{1,2}-\d{1,2}-\d{2}\b',  # Another format of date of birth
-        r'\b\d{1,2}\s[a-zA-Z]+\s\d{4}\b',  # Another format of date of birth
-        r'\b\d{1,2}/\d{1,2}/\d{4}\b',  # Another format of date of birth
-        r'\b\d{2}-\d{2}-\d{4}\b'  # Another format of date of birth
     ]
 
     for pattern in patterns:
@@ -62,7 +57,6 @@ def check_environment():
 
 def read_csv_from_s3(bucket_name, object_key, s3_endpoint_url, sts_client):
     try:
-        # Get temporary credentials using AssumeRoleWithWebIdentity
         role_arn = os.getenv('SOURCE_ROLE_ARN')
         role_session_name = 'source_session'
         provider_url = os.getenv('OIDC_PROVIDER_URL')
@@ -87,14 +81,13 @@ def read_csv_from_s3(bucket_name, object_key, s3_endpoint_url, sts_client):
 
         # Get object from S3
         response = s3.get_object(Bucket=bucket_name, Key=object_key)
-        # Read CSV content
         csv_content = response['Body'].read().decode('utf-8')
         return csv_content
     except Exception as e:
         logging.error(f"Error reading CSV from S3: {e}")
         return None
 
-def process_csv_files_in_bucket(bucket_name, s3_endpoint_url, sts_client, personal_info_bucket, no_personal_info_bucket):
+def process_csv_files_in_bucket(bucket_name, object_name, s3_endpoint_url, sts_client, personal_info_bucket, no_personal_info_bucket):
     try:
         # Get temporary credentials using AssumeRoleWithWebIdentity
         role_arn = os.getenv('SOURCE_ROLE_ARN')
@@ -118,28 +111,20 @@ def process_csv_files_in_bucket(bucket_name, s3_endpoint_url, sts_client, person
             aws_session_token=assumed_role['Credentials']['SessionToken'],
             endpoint_url=s3_endpoint_url
         )
-
-        # List objects in the bucket
-        response = s3.list_objects_v2(Bucket=bucket_name)
-        
-        # Process each object
-        for obj in response.get('Contents', []):
-            object_key = obj['Key']
-            # Skip objects that are already tagged as processed
-            if is_processed_object(s3, bucket_name, object_key):
-                logging.info(f"Skipping processed object: {object_key}")
-                continue
-            # Read CSV content from S3
-            csv_content = read_csv_from_s3(bucket_name, object_key, s3_endpoint_url, sts_client)
-            if csv_content:
-                shop_id, _ = object_key.split('_', 1)  # Extract shop ID from filename until first underscore
-                csv_content = insert_shop_id_to_csv(csv_content, shop_id)
-                # Determine destination bucket based on personal information
-                destination_bucket = personal_info_bucket if has_personal_info(csv_content) else no_personal_info_bucket
-                # Upload modified CSV to the appropriate destination bucket
-                upload_csv_to_s3(destination_bucket, object_key, csv_content, s3_endpoint_url, sts_client)
-                # Tag the object as processed
-                tag_object_as_processed(s3, bucket_name, object_key)
+        object_key = object_name
+        if is_processed_object(s3, bucket_name, object_key):
+            logging.info(f"Skipping processed object: {object_key}")
+            return None
+        csv_content = read_csv_from_s3(bucket_name, object_key, s3_endpoint_url, sts_client)
+        if csv_content:
+            shop_id, _ = object_key.split('_', 1)  # Extract shop ID from filename until first underscore
+            csv_content = insert_shop_id_to_csv(csv_content, shop_id)
+            # Determine destination bucket based on personal information
+            destination_bucket = personal_info_bucket if has_personal_info(csv_content) else no_personal_info_bucket
+            # Upload modified CSV to the appropriate destination bucket
+            upload_csv_to_s3(destination_bucket, object_key, csv_content, s3_endpoint_url, sts_client)
+            # Tag the object as processed
+            tag_object_as_processed(s3, bucket_name, object_key)
     except Exception as e:
         logging.error(f"Error processing CSV files in bucket: {e}")
 
@@ -235,57 +220,41 @@ def get_jwt_token(provider_url, client_id, client_secret):
         logging.error(f"Error obtaining JWT token: {e}")
         return None
 
-# Example endpoint to trigger CSV processing
-@app.route('/', methods=['GET'])
+@app.route('/', methods=['GET', 'POST'])
 def trigger_process():
-    # Check for required environment parameters
-    required_env_vars = [
-        'SOURCE_ROLE_ARN',
-        'DESTINATION_ROLE_ARN',
-        'OIDC_PROVIDER_URL',
-        'OIDC_CLIENT_SECRET',
-        'OIDC_CLIENT_ID',
-        'OIDC_USERNAME',
-        'OIDC_PASSWORD',
-        'S3_ENDPOINT_URL',
-        'STS_ENDPOINT_URL'
-    ]
+    if request.method == 'GET':
+        return 'Health OK', 200
+    elif request.method == 'POST':
+        try:
+            event = from_http(request.headers, request.get_data())
+            records = event.data['Records'][0]
+            bucket_name = records['s3']['bucket']['name']
+            object_name = records['s3']['object']['key']
+            logging.info(f"{bucket_name} {object_name}")
 
-    missing_params = [var for var in required_env_vars if os.getenv(var) is None]
+            s3_endpoint_url = os.getenv('S3_ENDPOINT_URL')
+            sts_endpoint_url = os.getenv('STS_ENDPOINT_URL')
+            personal_info_bucket = 'confidential'
+            no_personal_info_bucket = 'anonymized'
 
-    if missing_params:
-        return jsonify({'error': f'Missing environment parameters: {", ".join(missing_params)}'}), 500
+            sts_client = boto3.client('sts', endpoint_url=sts_endpoint_url)
 
-    # Set your source bucket
-    source_bucket_name = 'ingest'
+            process_csv_files_in_bucket(bucket_name, object_name ,s3_endpoint_url, sts_client, personal_info_bucket, no_personal_info_bucket)
 
-    # Set your destination buckets for personal info and non-personal info
-    personal_info_bucket = 'confidential'
-    no_personal_info_bucket = 'anonymized'
-    
-    # Get S3 endpoint URL from environment variable
-    s3_endpoint_url = os.getenv('S3_ENDPOINT_URL')
+            return jsonify({'message': 'CSV processing triggered for POST request'}), 204
+        except KeyError as e:
+            logging.error(f"Missing key in CloudEvent payload: {e}")
+            return jsonify({'error': f'Missing key in CloudEvent payload: {e}'}), 400
+        except Exception as e:
+            logging.error(f"Error processing POST request: {e}")
+            return jsonify({'error': str(e)}), 500
 
-    # Get custom STS endpoint
-    sts_endpoint_url = os.getenv('STS_ENDPOINT_URL')
-
-    # Initialize STS client with custom endpoint
-    sts_client = boto3.client('sts', endpoint_url=sts_endpoint_url)
-
-    # Process CSV files in the bucket
-    process_csv_files_in_bucket(source_bucket_name, s3_endpoint_url, sts_client, personal_info_bucket, no_personal_info_bucket)
-
-    return jsonify({'message': 'CSV processing triggered'}), 200
-
-# Example endpoint for health check
 @app.route('/healthz', methods=['GET'])
 def health_check():
     return 'Health OK', 200
 
 if __name__ == "__main__":
-    # Check environment parameters
     if not check_environment():
         exit(1)
 
-    # Run Flask app
     app.run(host='0.0.0.0', port=8080)
