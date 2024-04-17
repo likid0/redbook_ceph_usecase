@@ -26,6 +26,13 @@ def has_personal_info(csv_content):
             return True
     return False
 
+def has_legal_issue(csv_content):
+    reader = csv.reader(csv_content.splitlines())
+    for row in reader:
+        if 'legal' in row:
+            return True
+    return False
+
 def check_environment():
     missing_params = []
 
@@ -54,6 +61,17 @@ def check_environment():
         return False
     else:
         return True
+
+def enable_legal_hold(s3, bucket_name, object_key):
+    try:
+        s3.put_object_legal_hold(
+            Bucket=bucket_name,
+            Key=object_key,
+            LegalHold={'Status': 'ON'}
+        )
+        logging.info(f"Legal hold enabled on {object_key} due to legal issues.")
+    except Exception as e:
+        logging.error(f"Error enabling legal hold on {object_key}: {e}")
 
 def read_csv_from_s3(bucket_name, object_key, s3_endpoint_url, sts_client):
     try:
@@ -125,6 +143,8 @@ def process_csv_files_in_bucket(bucket_name, object_name, s3_endpoint_url, sts_c
             upload_csv_to_s3(destination_bucket, object_key, csv_content, s3_endpoint_url, sts_client)
             # Tag the object as processed
             tag_object_as_processed(s3, bucket_name, object_key)
+            if has_legal_issue(csv_content):
+                enable_legal_hold(s3, bucket_name, object_name)
     except Exception as e:
         logging.error(f"Error processing CSV files in bucket: {e}")
 
