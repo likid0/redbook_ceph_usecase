@@ -10,7 +10,9 @@ from cloudevents.http import from_http
 
 # Initialize logging
 app = Flask(__name__)
-logging.basicConfig(level=logging.INFO)
+__version__ = "1.2.0"
+logging.basicConfig(level=logging.INFO, format=f'%(asctime)s - %(levelname)s - Script Version {__version__} - %(message)s')
+
 
 def has_personal_info(csv_content):
     # Regular expressions to match common personal information patterns
@@ -57,7 +59,7 @@ def check_environment():
         print("Missing environment parameters:")
         for param in missing_params:
             print(f"- {param}")
-        print("Please set these environment variables and try again.")
+        logging.error(f"Please set these environment variables and try again.")
         return False
     else:
         return True
@@ -81,7 +83,6 @@ def read_csv_from_s3(bucket_name, object_key, s3_endpoint_url, sts_client):
         client_id = os.getenv('OIDC_CLIENT_ID')
         client_secret = os.getenv('OIDC_CLIENT_SECRET')
         jwt_token = get_jwt_token(provider_url, client_id, client_secret)
-        
         assumed_role = sts_client.assume_role_with_web_identity(
             RoleArn=role_arn,
             RoleSessionName=role_session_name,
@@ -138,9 +139,16 @@ def process_csv_files_in_bucket(bucket_name, object_name, s3_endpoint_url, sts_c
             shop_id, _ = object_key.split('_', 1)  # Extract shop ID from filename until first underscore
             csv_content = insert_shop_id_to_csv(csv_content, shop_id)
             # Determine destination bucket based on personal information
-            destination_bucket = personal_info_bucket if has_personal_info(csv_content) else no_personal_info_bucket
+            if has_personal_info(csv_content):
+                destination_bucket = personal_info_bucket
+                tag_color = 'red'
+            else:
+                destination_bucket = no_personal_info_bucket
+                tag_color = 'green'
             # Upload modified CSV to the appropriate destination bucket
+            logging.info(f"Uploading Object To destination bucket: {destination_bucket}")
             upload_csv_to_s3(destination_bucket, object_key, csv_content, s3_endpoint_url, sts_client)
+            tag_s3_object(s3, destination_bucket, object_key, tag_color)
             # Tag the object as processed
             tag_object_as_processed(s3, bucket_name, object_key)
             if has_legal_issue(csv_content):
@@ -216,6 +224,22 @@ def is_processed_object(s3, bucket_name, object_key):
     except Exception as e:
         logging.error(f"Error checking if object is processed: {e}")
         return False
+
+def tag_s3_object(s3, bucket_name, object_key, tag_value):
+    try:
+        # Log before attempting to tag
+        logging.info(f"Attempting to tag object {object_key} in {bucket_name} as {tag_value}.")
+        s3.put_object_tagging(
+            Bucket=bucket_name,
+            Key=object_key,
+            Tagging={'TagSet': [{'Key': 'DataClassification', 'Value': tag_value}]}
+        )
+        # Log after successful tagging
+        logging.info(f"Successfully tagged object {object_key} in {bucket_name} as {tag_value}.")
+    except Exception as e:
+        # Log any errors encountered during the tagging process
+        logging.error(f"Error tagging object {object_key} in {bucket_name} as {tag_value}: {e}")
+
 
 def get_jwt_token(provider_url, client_id, client_secret):
     # Send authentication request to OIDC provider to obtain JWT token
