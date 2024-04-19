@@ -1,12 +1,16 @@
-CREATE TABLE IF NOT EXISTS transactions (
-    client_id STRING,
-    transaction_id STRING,
-    item_id STRING,
-    item_description STRING,
-    quantity INT,
-    transaction_date TIMESTAMP,
-    total_amount DECIMAL(10,2)
-) WITH (
-    format = 'CSV',
-    external_location = 's3://your-bucket/transactions/'
+CREATE TABLE ecommerce_transactions.ecomm_trans.transactions (
+    client_id BIGINT,
+    transaction_id VARCHAR,
+    item_id VARCHAR,
+    item_description VARCHAR,
+    category VARCHAR,
+    quantity INTEGER,
+    total_amount DOUBLE,
+    credit_card_number VARCHAR,
+    transaction_date TIMESTAMP
+)
+WITH (
+    format = 'PARQUET',
+    external_location = 's3a://ecommtrans/ecomm_trans/',
+    partitioned_by = ARRAY['transaction_date']
 );

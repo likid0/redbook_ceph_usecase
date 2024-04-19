@@ -114,11 +114,11 @@ def generate_transactions_with_items(clients, items, num_transactions):
         transaction_id = fake.uuid4()
         item_id, item_description, category = random.choice(items)
         quantity = random.randint(1, 5)
-        transaction_date = fake.date_time_this_year()
         total_amount = quantity * random.uniform(5.0, 100.0)
         credit_card_number = fake.credit_card_number(card_type=None)
-        transactions.append([client_id, transaction_id, item_id, item_description, category, quantity, transaction_date, total_amount, credit_card_number])
-    return pd.DataFrame(transactions, columns=["Client ID", "Transaction ID", "Item ID", "Item Description", "Category", "Quantity", "Transaction Date", "Total Amount", "Credit Card Number"])
+        transaction_date = fake.date_time_this_year()
+        transactions.append([client_id, transaction_id, item_id, item_description, category, quantity, total_amount, credit_card_number, transaction_date])
+    return pd.DataFrame(transactions, columns=["Client ID", "Transaction ID", "Item ID", "Item Description", "Category", "Quantity", "Total Amount", "Credit Card Number", "Transaction Date"])
 
 def generate_full_browsing_logs(clients, items, num_logs):
     os_choices = ['Windows', 'MacOS', 'Linux', 'iOS', 'Android']
