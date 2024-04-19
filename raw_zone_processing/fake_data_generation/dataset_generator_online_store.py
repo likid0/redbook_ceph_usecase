@@ -1,4 +1,3 @@
-
 import pandas as pd
 import numpy as np
 from faker import Faker
@@ -6,6 +5,7 @@ import random
 from datetime import datetime, timedelta
 import calendar
 import sys
+import argparse
 
 # Initialize Faker
 fake = Faker()
@@ -84,24 +84,29 @@ def generate_full_browsing_logs(clients, items, num_logs):
         "os", "customer", "d_day_name", "i_current_price", "i_category", "i_description", "c_preferred_cust_flag", "ds"
     ])
 
-def main(num_clients, num_items, num_transactions, num_logs):
-    import datetime
-    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    clients = generate_clients(num_clients)
-    items = generate_items_with_categories(num_items)
-    transaction_data = generate_transactions_with_items(clients, items, num_transactions)
-    browsing_data = generate_full_browsing_logs(clients, items, num_logs)
-    
-    transaction_data.to_csv(f'transaction_data_{timestamp}.csv', index=False)
-    browsing_data.to_csv(f'browsing_data_{timestamp}.csv', index=False)
-    print(f"Data generated and saved to CSV files: transaction_data_{timestamp}.csv and browsing_data_{timestamp}.csv")
+def main():
+    parser = argparse.ArgumentParser(description='Generate retail datasets.')
+    parser.add_argument('num_clients', type=int, help='Number of clients to generate')
+    parser.add_argument('num_items', type=int, help='Number of items to generate')
+    parser.add_argument('num_transactions', type=int, help='Number of transactions to generate')
+    parser.add_argument('num_logs', type=int, help='Number of browsing logs to generate')
+    parser.add_argument('--output_parquet', action='store_true', help='Output in Parquet format instead of CSV')
+    args = parser.parse_args()
+
+    clients = generate_clients(args.num_clients)
+    items = generate_items_with_categories(args.num_items)
+    transaction_data = generate_transactions_with_items(clients, items, args.num_transactions)
+    browsing_data = generate_full_browsing_logs(clients, items, args.num_logs)
+
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    if args.output_parquet:
+        transaction_data.to_parquet(f'transaction_data_{timestamp}.parquet', index=False)
+        browsing_data.to_parquet(f'browsing_data_{timestamp}.parquet', index=False)
+        print(f'Data generated and saved to Parquet files: transaction_data_{timestamp}.parquet and browsing_data_{timestamp}.parquet')
+    else:
+        transaction_data.to_csv(f'transaction_data_{timestamp}.csv', index=False)
+        browsing_data.to_csv(f'browsing_data_{timestamp}.csv', index=False)
+        print(f'Data generated and saved to CSV files: transaction_data_{timestamp}.csv and browsing_data_{timestamp}.csv')
 
 if __name__ == "__main__":
-    if len(sys.argv) != 5:
-        print("Usage: python script.py <num_clients> <num_items> <num_transactions> <num_logs>")
-    else:
-        num_clients = int(sys.argv[1])
-        num_items = int(sys.argv[2])
-        num_transactions = int(sys.argv[3])
-        num_logs = int(sys.argv[4])
-        main(num_clients, num_items, num_transactions, num_logs)
+    main()
