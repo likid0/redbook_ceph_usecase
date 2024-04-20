@@ -1,21 +1,21 @@
-CREATE TABLE IF NOT EXISTS browsing_logs (
-    ip STRING,
+CREATE TABLE IF NOT EXISTS "ecommerce_broswer_logs"."ecomm_logs".browsing_data (
+    ip VARCHAR,
     ts TIMESTAMP,
-    tz STRING,
-    verb STRING,
-    resource_type STRING,
-    resource_fk STRING,
-    response INT,
-    browser STRING,
-    os STRING,
-    customer STRING,
-    d_day_name STRING,
-    i_current_price DECIMAL(10,2),
-    i_category STRING,
-    c_preferred_cust_flag STRING,
-    ds STRING
+    tz VARCHAR,
+    verb VARCHAR,
+    resource_type VARCHAR,
+    resource_fk VARCHAR,
+    response INTEGER,
+    browser VARCHAR,
+    os VARCHAR,
+    customer BIGINT,
+    d_day_name VARCHAR,
+    i_current_price DOUBLE,
+    i_category VARCHAR,
+    i_description VARCHAR,
+    c_preferred_cust_flag BOOLEAN,
+    ds DATE
 ) WITH (
-    format = 'CSV',
-    external_location = 's3://your-bucket/browsing_logs/',
-    partitioned_by = ARRAY['ds']
+    format = 'Parquet',
+    external_location = 's3a://ecommlogs/ecomm_logs'
 );
