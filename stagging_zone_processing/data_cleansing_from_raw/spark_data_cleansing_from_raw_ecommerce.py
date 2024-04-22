@@ -1,88 +1,71 @@
-
 import os
 import sys
-import requests
+import logging
 from pyspark.sql import SparkSession
-from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType, DateType
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType, DateType
 
-def get_jwt_token(provider_url, client_id, client_secret):
-    ''' Obtain JWT token from OIDC provider. '''
-    username = os.getenv('OIDC_USERNAME')
-    password = os.getenv('OIDC_PASSWORD')
-    token_endpoint = f"{provider_url}/token"
-    payload = {
-        'grant_type': 'password',
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'username': username,
-        'password': password
-    }
-    try:
-        response = requests.post(token_endpoint, data=payload)
-        response.raise_for_status()
-        return response.json()['access_token']
-    except Exception as e:
-        print(f"Error obtaining JWT token: {e}")
-        return None
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def check_environment_variables():
+    """Check for all necessary environment variables."""
     required_vars = [
         'S3_ENDPOINT', 'SOURCE_BUCKET', 'DESTINATION_BUCKET',
-        'SOURCE_ROLE_ARN', 'DESTINATION_ROLE_ARN',
-        'OIDC_PROVIDER_URL', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET',
-        'OIDC_USERNAME', 'OIDC_PASSWORD'
+        'SOURCE_ROLE_ARN', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY',
+        'SPARK_MASTER_URL', 'STS_ENDPOINT', 'STS_REGION', 'SESSION_DURATION'
     ]
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     if missing_vars:
-        print("Missing environment variables:")
+        logging.error("Missing environment variables:")
         for var in missing_vars:
-            print(var)
-        print("\nPlease set the environment variables before running the script.")
-        print("Example:")
-        print("export S3_ENDPOINT='<your-s3-endpoint>'")
-        print("export SOURCE_BUCKET='<your-source-bucket>'")
-        print("export DESTINATION_BUCKET='<your-destination-bucket>'")
-        print("... other variables ...")
+            logging.error(var)
         sys.exit(1)
 
 def main():
+    """Main function to process data using Spark with AWS IAM role assumption."""
     check_environment_variables()
-    provider_url = os.getenv('OIDC_PROVIDER_URL')
-    client_id = os.getenv('OIDC_CLIENT_ID')
-    client_secret = os.getenv('OIDC_CLIENT_SECRET')
-    source_role_arn = os.getenv('SOURCE_ROLE_ARN')
-    destination_role_arn = os.getenv('DESTINATION_ROLE_ARN')
-    source_bucket = os.getenv('SOURCE_BUCKET')
-    destination_bucket = os.getenv('DESTINATION_BUCKET')
-    s3_endpoint = os.getenv('S3_ENDPOINT')
+    spark_master_url = os.getenv('SPARK_MASTER_URL', 'spark://localhost:7077')
 
-    jwt_token = get_jwt_token(provider_url, client_id, client_secret)
-    
-    spark = SparkSession.builder.appName("Data Processing with JWT and IAM Roles") \
-        .config("spark.hadoop.fs.s3a.endpoint", s3_endpoint) \
+    spark = SparkSession.builder \
+        .appName("Data Processing with IAM Role Assumption") \
+        .master(spark_master_url) \
+        .config("spark.driver.host", "10.88.0.6") \
+        .config("spark.hadoop.fs.s3a.endpoint", os.getenv('S3_ENDPOINT')) \
         .config("spark.hadoop.fs.s3a.aws.credentials.provider", "org.apache.hadoop.fs.s3a.auth.AssumedRoleCredentialProvider") \
-        .config("spark.hadoop.fs.s3a.assumed.role.arn", source_role_arn) \
-        .config("spark.hadoop.fs.s3a.assumed.role.session.name", "spark-session") \
-        .config("spark.hadoop.fs.s3a.assumed.role.token.providers", "org.apache.hadoop.fs.s3a.auth.CustomSessionTokenProvider") \
-        .config("spark.hadoop.fs.s3a.extra.AWS_SESSION_TOKEN", jwt_token) \
+        .config("spark.hadoop.fs.s3a.access.key", os.getenv('AWS_ACCESS_KEY_ID')) \
+        .config("spark.hadoop.fs.s3a.secret.key", os.getenv('AWS_SECRET_ACCESS_KEY')) \
+        .config("spark.hadoop.fs.s3a.assumed.role.arn", os.getenv('SOURCE_ROLE_ARN')) \
+        .config("spark.hadoop.fs.s3a.assumed.role.sts.endpoint", os.getenv('STS_ENDPOINT')) \
+        .config("spark.hadoop.fs.s3a.assumed.role.sts.endpoint.region", os.getenv('STS_REGION')) \
+        .config("spark.hadoop.fs.s3a.assumed.role.session.duration", os.getenv('SESSION_DURATION')) \
+        .config("spark.hadoop.fs.s3a.assumed.role.session.name", "sparkSession") \
+        .config("spark.hadoop.fs.s3a.assumed.role.credentials.provider", "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider") \
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
         .config("spark.hadoop.fs.s3a.path.style.access", True) \
         .getOrCreate()
 
-    # Schema for browsing data
-    browsingSchema = StructType([
-        StructField("session_id", StringType(), True),
-        StructField("client_id", IntegerType(), True),
-        StructField("page_views", IntegerType(), True),
-        StructField("ts", DateType(), True)  # Assuming 'ts' is a timestamp
+    browsing_schema = StructType([
+        StructField("ip", StringType(), True),
+        StructField("ts", StringType(), True),
+        StructField("tz", StringType(), True),
+        StructField("verb", StringType(), True),
+        StructField("resource_type", StringType(), True),
+        StructField("resource_fk", StringType(), True),
+        StructField("response", IntegerType(), True),
+        StructField("browser", StringType(), True),
+        StructField("os", StringType(), True),
+        StructField("customer", IntegerType(), True),
+        StructField("d_day_name", StringType(), True),
+        StructField("i_current_price", DoubleType(), True),
+        StructField("i_category", StringType(), True),
+        StructField("i_description", StringType(), True),
+        StructField("c_preferred_cust_flag", StringType(), True),
+        StructField("ds", DateType(), True)
     ])
 
-    # Load and cleanse browsing data
-    browsing_df = spark.read.schema(browsingSchema).csv(f"s3a://{source_bucket}/browsing/*.csv")
-    browsing_cleaned = browsing_df.dropDuplicates().na.fill({"page_views": 0})
+    browsing_df = spark.read.schema(browsing_schema).csv(f"s3a://{os.getenv('SOURCE_BUCKET')}/browsing/*.csv")
+    browsing_cleaned = browsing_df.dropDuplicates()
 
-    # Write cleaned and partitioned browsing data to the STAGING zone in Parquet format
-    browsing_cleaned.write.partitionBy("ts").mode("overwrite").parquet(f"s3a://{destination_bucket}/browsing/")
+    browsing_cleaned.write.partitionBy("ds").mode("overwrite").parquet(f"s3a://{os.getenv('DESTINATION_BUCKET')}/browsing/")
 
     spark.stop()
 
