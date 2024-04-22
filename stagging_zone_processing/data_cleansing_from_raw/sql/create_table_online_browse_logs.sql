@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS "ecommerce_broswer_logs"."ecomm_logs".browsing_data (
+CREATE TABLE IF NOT EXISTS "ecommerce_broswer_logs"."ecomm_logs".browsing_data_partitioned (
     ip VARCHAR,
     ts TIMESTAMP,
     tz VARCHAR,
@@ -15,7 +15,11 @@ CREATE TABLE IF NOT EXISTS "ecommerce_broswer_logs"."ecomm_logs".browsing_data (
     i_description VARCHAR,
     c_preferred_cust_flag BOOLEAN,
     ds DATE
-) WITH (
+) 
+WITH (
     format = 'Parquet',
-    external_location = 's3a://ecommlogs/ecomm_logs'
+    external_location = 's3a://ecommlogs/browsing/',
+    partitioned_by = ARRAY['ds']
 );
+
+CALL ecommerce_broswer_logs.system.sync_partition_metadata(schema_name => 'ecomm_logs', table_name => 'browsing_data_partitioned', mode => 'ADD');
