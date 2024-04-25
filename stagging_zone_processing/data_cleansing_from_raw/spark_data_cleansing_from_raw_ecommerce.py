@@ -52,6 +52,7 @@ def get_s3_client():
         endpoint_url=os.getenv('S3_ENDPOINT')
     )
 
+
 def check_s3_object_tag(bucket, key, tag_key):
     """ Check if the S3 object has a specific tag set """
     s3 = get_s3_client()
@@ -63,11 +64,28 @@ def check_s3_object_tag(bucket, key, tag_key):
         logging.error(f"Failed to get tags for {key}: {e}")
         return False
 
+def tag_parquet_files(bucket, prefix, tag_key, tag_value):
+    """ Tag all Parquet files in a specified S3 bucket prefix """
+    s3 = get_s3_client()
+    paginator = s3.get_paginator('list_objects_v2')
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix, PaginationConfig={'PageSize': 1000}):
+        for obj in page.get('Contents', []):
+            if obj['Key'].endswith('.parquet'):
+                s3.put_object_tagging(
+                    Bucket=bucket,
+                    Key=obj['Key'],
+                    Tagging={'TagSet': [{'Key': tag_key, 'Value': tag_value}]}
+                )
+
+
 def main():
     """ Main function to process data using Spark with AWS IAM role assumption """
     check_environment_variables()
     source_bucket = os.getenv('SOURCE_BUCKET')
+    destination_bucket = os.getenv('DESTINATION_BUCKET')
     s3_object_key = os.getenv('S3_OBJECT_KEY')
+    browsing_prefix = 'browsing/'
+    masked_prefix = 'masked/'
 
     # Check if the file is already processed
     if check_s3_object_tag(source_bucket, s3_object_key, 'processed'):
@@ -116,10 +134,12 @@ def main():
     # Load and cleanse browsing data
     file_path = f"s3a://{source_bucket}/{s3_object_key}"
     browsing_df = spark.read.schema(browsing_schema).csv(file_path)
+    browsing_df = browsing_df.withColumn("ts", to_timestamp(col("ts"), "yyyy-MM-dd HH:mm:ss"))
     browsing_cleaned = browsing_df.dropDuplicates()
 
     # Write cleaned and partitioned browsing data to the STAGING zone in Parquet format
-    browsing_cleaned.write.partitionBy("ds").mode("overwrite").parquet(f"s3a://{os.getenv('DESTINATION_BUCKET')}/browsing/")
+    browsing_cleaned.write.partitionBy("ds").mode("overwrite").parquet(f"s3a://{destination_bucket}/{browsing_prefix}")
+    browsing_cleaned.drop("ip", "customer").write.partitionBy("ds").mode("overwrite").parquet(f"s3a://{destination_bucket}/{masked_prefix}")
 
     # Tag the original object as processed
     s3 = get_s3_client()
@@ -128,6 +148,10 @@ def main():
         Key=s3_object_key,
         Tagging={'TagSet': [{'Key': 'processed', 'Value': 'true'}]}
     )
+
+    # Tag the browsing data as 'secclearance: red'
+    tag_parquet_files(destination_bucket, browsing_prefix, 'secclearance', 'red')
+
 
     spark.stop()
 

@@ -1,4 +1,4 @@
-CREATE TABLE ecommerce_transactions.ecomm_trans.transactions (
+CREATE TABLE transactions (
     client_id BIGINT,
     transaction_id VARCHAR,
     item_id VARCHAR,
@@ -11,6 +11,5 @@ CREATE TABLE ecommerce_transactions.ecomm_trans.transactions (
 )
 WITH (
     format = 'PARQUET',
-    external_location = 's3a://ecommtrans/ecomm_trans/',
-    partitioned_by = ARRAY['transaction_date']
+    external_location = 's3a://ecommtrans/transactions/'
 );
