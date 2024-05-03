@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS "ecommerce_broswer_logs"."ecomm_logs".browsing_data_partitioned (
+CREATE TABLE IF NOT EXISTS "ecommerce_broswer_logs"."browsing".browsing_data_partitioned (
     ip VARCHAR,
     ts TIMESTAMP,
     tz VARCHAR,

@@ -1,13 +1,13 @@
 CREATE TABLE transactions (
-    client_id BIGINT,
-    transaction_id VARCHAR,
-    item_id VARCHAR,
-    item_description VARCHAR,
-    category VARCHAR,
-    quantity INTEGER,
-    total_amount DOUBLE,
-    credit_card_number VARCHAR,
-    transaction_date TIMESTAMP
+    "Client ID" bigint,
+    "Transaction ID" varchar,
+    "Item ID" varchar,
+    "Item Description" varchar,
+    "Category" varchar,
+    "Quantity" integer,
+    "Total Amount" double,
+    "Credit Card Number" varchar,
+    "Transaction Date" timestamp
 )
 WITH (
     format = 'PARQUET',
