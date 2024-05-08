@@ -9,7 +9,7 @@ def csv_to_parquet(input_file):
         'client_id': 'int64',
         'transaction_id': 'str',
         'item_id': 'str',
-        'transaction_date': 'str',  # Read as string first
+        'transaction_date': 'str', 
         'country': 'str',
         'customer_type': 'str',
         'item_description': 'str',
@@ -20,18 +20,15 @@ def csv_to_parquet(input_file):
         'returned': 'bool'
     }
 
-    # Read the CSV with defined data types
     df = pd.read_csv(input_file, dtype=data_types)
 
-    # Explicitly convert transaction_date to datetime with the correct format
     df['transaction_date'] = pd.to_datetime(df['transaction_date'], format='%Y-%m-%d %H:%M:%S')
 
-    # Define schema to ensure compatibility with Parquet and Presto expectations
     schema = pa.schema([
         ('client_id', pa.int64()),
         ('transaction_id', pa.string()),
         ('item_id', pa.string()),
-        ('transaction_date', pa.timestamp('us')),  # Ensure the timestamp unit matches Presto
+        ('transaction_date', pa.timestamp('us')),
         ('country', pa.string()),
         ('customer_type', pa.string()),
         ('item_description', pa.string()),
@@ -42,7 +39,6 @@ def csv_to_parquet(input_file):
         ('returned', pa.bool_())
     ])
 
-    # Convert DataFrame to Parquet file using the defined schema
     output_file = os.path.splitext(input_file)[0] + '.parquet'
     table = pa.Table.from_pandas(df, schema=schema, preserve_index=False)
     pq.write_table(table, output_file, compression='snappy')

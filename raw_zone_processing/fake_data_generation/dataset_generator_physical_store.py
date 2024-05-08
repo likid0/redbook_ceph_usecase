@@ -9,10 +9,8 @@ import boto3
 import requests
 import argparse
 
-# Initialize logging
 logging.basicConfig(level=logging.INFO)
 
-# List of required environment variables
 REQUIRED_ENV_VARS = [
     'S3_ENDPOINT_URL',
     'STS_ENDPOINT_URL',

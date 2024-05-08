@@ -7,7 +7,7 @@ import os
 def csv_to_parquet(input_file):
     data_types = {
         'ip': 'str',
-        'ts': 'str',  # Handle as string and then convert
+        'ts': 'str', 
         'tz': 'str',
         'verb': 'str',
         'resource_type': 'str',
@@ -26,10 +26,8 @@ def csv_to_parquet(input_file):
 
     df = pd.read_csv(input_file, dtype=data_types)
 
-    # Convert 'ts' from standard datetime string to datetime object
     df['ts'] = pd.to_datetime(df['ts'], format='%Y-%m-%d %H:%M:%S')
 
-    # Convert 'ds' from string to date
     df['ds'] = pd.to_datetime(df['ds']).dt.date
 
     print(df.dtypes)
@@ -55,7 +53,6 @@ def csv_to_parquet(input_file):
 
     output_file = os.path.splitext(input_file)[0] + '.parquet'
 
-    # Convert DataFrame to Parquet with the defined schema
     table = pa.Table.from_pandas(df, schema=schema, preserve_index=False)
     pq.write_table(table, output_file, compression='snappy')
 

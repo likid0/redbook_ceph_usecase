@@ -87,7 +87,6 @@ def main():
     browsing_prefix = 'browsing/'
     masked_prefix = 'masked/'
 
-    # Check if the file is already processed
     if check_s3_object_tag(source_bucket, s3_object_key, 'processed'):
         logging.info(f"Object {s3_object_key} has already been processed.")
         return
@@ -111,7 +110,6 @@ def main():
         .config("spark.hadoop.fs.s3a.path.style.access", True) \
         .getOrCreate()
 
-    # Define schema for browsing data
     browsing_schema = StructType([
         StructField("ip", StringType(), True),
         StructField("ts", StringType(), True),
@@ -137,7 +135,6 @@ def main():
     browsing_df = browsing_df.withColumn("ts", to_timestamp(col("ts"), "yyyy-MM-dd HH:mm:ss"))
     browsing_cleaned = browsing_df.dropDuplicates()
 
-    # Write cleaned and partitioned browsing data to the STAGING zone in Parquet format
     browsing_cleaned.write.partitionBy("ds").mode("overwrite").parquet(f"s3a://{destination_bucket}/{browsing_prefix}")
     browsing_cleaned.drop("ip", "customer").write.partitionBy("ds").mode("overwrite").parquet(f"s3a://{destination_bucket}/{masked_prefix}")
 
@@ -148,8 +145,6 @@ def main():
         Key=s3_object_key,
         Tagging={'TagSet': [{'Key': 'processed', 'Value': 'true'}]}
     )
-
-    # Tag the browsing data as 'secclearance: red'
     tag_parquet_files(destination_bucket, browsing_prefix, 'secclearance', 'red')
 
 

@@ -66,11 +66,10 @@ def generate_browsing_logs(clients, items, num_logs):
         item = random.choice(items_list)
         view_date = fake.date_time_this_year(before_now=True, after_now=False)
 
-        # Adjust for realistic browsing times
         if view_date.hour < 8 or view_date.hour > 20:
-            if random.random() < 0.2:  # Less activity at night
+            if random.random() < 0.2: 
                 continue
-        if view_date.weekday() >= 5 and random.random() < 0.7:  # More activity on weekends
+        if view_date.weekday() >= 5 and random.random() < 0.7: 
             pass
 
         logs.append({
@@ -100,10 +99,10 @@ def generate_transactions(clients, items, browsing_logs):
     items_dict = items.set_index('item_id').to_dict('index')
     for index, row in browsing_logs.iterrows():
         item_details = items_dict[row['resource_fk']]
-        campaign = item_details['marketing_campaign'] if random.random() < 0.1 else None  # 10% campaign influence
+        campaign = item_details['marketing_campaign'] if random.random() < 0.1 else None 
         client_details = clients_dict[row['customer']]
         browse_time = datetime.strptime(row['ts'], '%Y-%m-%d %H:%M:%S')
-        transaction_time = browse_time + timedelta(hours=random.randint(1, 24))  # Ensure no negative times
+        transaction_time = browse_time + timedelta(hours=random.randint(1, 24))  
         is_returned = random.random() < item_details['returned']
         total_amount = round(row['i_current_price'] * random.randint(1, 5), 2)
 
