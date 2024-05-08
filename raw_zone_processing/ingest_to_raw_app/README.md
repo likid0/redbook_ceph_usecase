@@ -10,7 +10,7 @@ This Flask application is meant only for example pourpuses, it processes CSV fil
 - **Secure AWS Role Access**: Utilizes AWS Security Token Service (STS) to assume roles securely with web identity federation for accessing S3 objects.
 
 ## Prerequisites
-- AWS Account with access to S3, STS, and permissions for object tagging and legal holds.
+- Ceph Account with access to S3, STS, and permissions for object tagging and legal holds.
 - Python 3.6 or higher installed.
 - Flask and Boto3 libraries installed. You can install them using pip:
 - Properly configured AWS credentials on the host machine or in your deployment environment that can assume the specified roles.

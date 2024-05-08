@@ -6,29 +6,45 @@ import os
 
 def csv_to_parquet(input_file):
     data_types = {
-        'Client ID': 'int64',
-        'Transaction ID': 'str',
-        'Item ID': 'str',
-        'Item Description': 'str',
-        'Category': 'str',
-        'Quantity': 'int32',
-        'Total Amount': 'float64',
-        'Credit Card Number': 'str'
+        'client_id': 'int64',
+        'transaction_id': 'str',
+        'item_id': 'str',
+        'transaction_date': 'str',  # Read as string first
+        'country': 'str',
+        'customer_type': 'str',
+        'item_description': 'str',
+        'category': 'str',
+        'quantity': 'int32',
+        'total_amount': 'float64',
+        'marketing_campaign': 'str',
+        'returned': 'bool'
     }
 
-    date_columns = ['Transaction Date']
-    df = pd.read_csv(input_file, dtype=data_types, parse_dates=date_columns)
+    # Read the CSV with defined data types
+    df = pd.read_csv(input_file, dtype=data_types)
 
-    # Debugging output to check data types
-    print(df.dtypes)
+    # Explicitly convert transaction_date to datetime with the correct format
+    df['transaction_date'] = pd.to_datetime(df['transaction_date'], format='%Y-%m-%d %H:%M:%S')
 
-    # Replace NaN values in 'Total Amount' with zeros
-    df['Total Amount'] = df['Total Amount'].fillna(0)
+    # Define schema to ensure compatibility with Parquet and Presto expectations
+    schema = pa.schema([
+        ('client_id', pa.int64()),
+        ('transaction_id', pa.string()),
+        ('item_id', pa.string()),
+        ('transaction_date', pa.timestamp('us')),  # Ensure the timestamp unit matches Presto
+        ('country', pa.string()),
+        ('customer_type', pa.string()),
+        ('item_description', pa.string()),
+        ('category', pa.string()),
+        ('quantity', pa.int32()),
+        ('total_amount', pa.float64()),
+        ('marketing_campaign', pa.string()),
+        ('returned', pa.bool_())
+    ])
 
+    # Convert DataFrame to Parquet file using the defined schema
     output_file = os.path.splitext(input_file)[0] + '.parquet'
-
-    # Convert DataFrame to Parquet without explicitly defining the schema
-    table = pa.Table.from_pandas(df, preserve_index=False)
+    table = pa.Table.from_pandas(df, schema=schema, preserve_index=False)
     pq.write_table(table, output_file, compression='snappy')
 
     print(f"Converted '{input_file}' to '{output_file}' successfully.")
@@ -40,3 +56,4 @@ if __name__ == "__main__":
 
     input_file = sys.argv[1]
     csv_to_parquet(input_file)
+

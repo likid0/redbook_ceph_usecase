@@ -15,7 +15,6 @@ logging.basicConfig(level=logging.INFO, format=f'%(asctime)s - %(levelname)s - S
 
 
 def has_personal_info(csv_content):
-    # Regular expressions to match common personal information patterns
     patterns = [
         r'\b\d{3}-\d{2}-\d{4}\b',  # Social Security Number (SSN)
         r'\b\d{4}-\d{4}-\d{4}-\d{4}\b',  # Credit Card Number
@@ -38,7 +37,6 @@ def has_legal_issue(csv_content):
 def check_environment():
     missing_params = []
 
-    # Check for required environment variables
     required_env_vars = [
         'SOURCE_ROLE_ARN',
         'DESTINATION_ROLE_ARN',
@@ -115,7 +113,6 @@ def process_csv_files_in_bucket(bucket_name, object_name, s3_endpoint_url, sts_c
         client_id = os.getenv('OIDC_CLIENT_ID')
         client_secret = os.getenv('OIDC_CLIENT_SECRET')
         jwt_token = get_jwt_token(provider_url, client_id, client_secret)
-        
         assumed_role = sts_client.assume_role_with_web_identity(
             RoleArn=role_arn,
             RoleSessionName=role_session_name,
@@ -138,18 +135,15 @@ def process_csv_files_in_bucket(bucket_name, object_name, s3_endpoint_url, sts_c
         if csv_content:
             shop_id, _ = object_key.split('_', 1)  # Extract shop ID from filename until first underscore
             csv_content = insert_shop_id_to_csv(csv_content, shop_id)
-            # Determine destination bucket based on personal information
             if has_personal_info(csv_content):
                 destination_bucket = personal_info_bucket
                 tag_color = 'red'
             else:
                 destination_bucket = no_personal_info_bucket
                 tag_color = 'green'
-            # Upload modified CSV to the appropriate destination bucket
             logging.info(f"Uploading Object To destination bucket: {destination_bucket}")
             upload_csv_to_s3(destination_bucket, object_key, csv_content, s3_endpoint_url, sts_client)
             tag_s3_object(s3, destination_bucket, object_key, tag_color)
-            # Tag the object as processed
             tag_object_as_processed(s3, bucket_name, object_key)
             if has_legal_issue(csv_content):
                 enable_legal_hold(s3, bucket_name, object_name)
@@ -157,13 +151,10 @@ def process_csv_files_in_bucket(bucket_name, object_name, s3_endpoint_url, sts_c
         logging.error(f"Error processing CSV files in bucket: {e}")
 
 def insert_shop_id_to_csv(csv_content, shop_id):
-    # Split CSV content into rows
     rows = csv_content.split('\n')
-    # Insert shop ID as the first column
     for i, row in enumerate(rows):
         if row.strip():  # Skip empty rows
             rows[i] = f"{shop_id},{row}"
-    # Join rows back into CSV content
     modified_csv_content = '\n'.join(rows)
     modified_csv_content = modified_csv_content.replace('\r', '')
     return modified_csv_content
@@ -183,7 +174,6 @@ def upload_csv_to_s3(bucket_name, object_key, csv_content, s3_endpoint_url, sts_
             WebIdentityToken=jwt_token
         )
 
-        # Initialize S3 client with temporary credentials
         s3 = boto3.client(
             's3',
             aws_access_key_id=assumed_role['Credentials']['AccessKeyId'],
@@ -192,7 +182,6 @@ def upload_csv_to_s3(bucket_name, object_key, csv_content, s3_endpoint_url, sts_
             endpoint_url=s3_endpoint_url
         )
 
-        # Upload modified CSV to S3 bucket
         response = s3.put_object(Bucket=bucket_name, Key=object_key, Body=csv_content.encode('utf-8'))
         logging.info(f"Modified CSV uploaded to S3: {object_key}")
     except Exception as e:
@@ -200,7 +189,6 @@ def upload_csv_to_s3(bucket_name, object_key, csv_content, s3_endpoint_url, sts_
 
 def tag_object_as_processed(s3, bucket_name, object_key):
     try:
-        # Tag the object as processed
         s3.put_object_tagging(
             Bucket=bucket_name,
             Key=object_key,
@@ -212,7 +200,6 @@ def tag_object_as_processed(s3, bucket_name, object_key):
 
 def is_processed_object(s3, bucket_name, object_key):
     try:
-        # Check if the object is tagged as processed
         response = s3.get_object_tagging(Bucket=bucket_name, Key=object_key)
         tags = response['TagSet']
         for tag in tags:
@@ -227,22 +214,18 @@ def is_processed_object(s3, bucket_name, object_key):
 
 def tag_s3_object(s3, bucket_name, object_key, tag_value):
     try:
-        # Log before attempting to tag
         logging.info(f"Attempting to tag object {object_key} in {bucket_name} as {tag_value}.")
         s3.put_object_tagging(
             Bucket=bucket_name,
             Key=object_key,
             Tagging={'TagSet': [{'Key': 'DataClassification', 'Value': tag_value}]}
         )
-        # Log after successful tagging
         logging.info(f"Successfully tagged object {object_key} in {bucket_name} as {tag_value}.")
     except Exception as e:
-        # Log any errors encountered during the tagging process
         logging.error(f"Error tagging object {object_key} in {bucket_name} as {tag_value}: {e}")
 
 
 def get_jwt_token(provider_url, client_id, client_secret):
-    # Send authentication request to OIDC provider to obtain JWT token
     username = os.getenv('OIDC_USERNAME')
     password = os.getenv('OIDC_PASSWORD')
     token_endpoint = f"{provider_url}/token"

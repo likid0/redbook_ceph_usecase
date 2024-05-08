@@ -1,15 +1,18 @@
-CREATE TABLE transactions (
-    "Client ID" bigint,
-    "Transaction ID" varchar,
-    "Item ID" varchar,
-    "Item Description" varchar,
-    "Category" varchar,
-    "Quantity" integer,
-    "Total Amount" double,
-    "Credit Card Number" varchar,
-    "Transaction Date" timestamp
+CREATE TABLE ecommerce_transactions.transactions.transactions (
+    client_id bigint,
+    transaction_id varchar,
+    item_id varchar,
+    transaction_date timestamp,
+    country varchar,
+    customer_type varchar,
+    item_description varchar,
+    category varchar,
+    quantity integer,
+    total_amount double,
+    marketing_campaign varchar,
+    returned boolean
 )
 WITH (
-    format = 'PARQUET',
-    external_location = 's3a://ecommtrans/transactions/'
+    external_location = 's3a://ecommtrans/transactions',
+    format = 'PARQUET'
 );

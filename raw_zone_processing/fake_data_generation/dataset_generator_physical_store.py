@@ -150,4 +150,3 @@ if __name__ == "__main__":
     parser.add_argument("--include-legal-issue", action="store_true", help="Include a legal issue column with one entry set to 'legal'")
     args = parser.parse_args()
     generate_fake_data(args.shop_id, args.date, args.num_entries, args.include_personal_data, args.include_legal_issue)
-
